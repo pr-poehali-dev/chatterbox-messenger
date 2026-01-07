@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import AuthScreen from '@/components/AuthScreen';
 import SettingsScreen from '@/components/SettingsScreen';
+import VoiceRecorder from '@/components/VoiceRecorder';
+import CallScreen from '@/components/CallScreen';
+import MusicSearch from '@/components/MusicSearch';
 
 type Tab = 'chats' | 'calls' | 'stories' | 'music' | 'profile';
 
@@ -18,6 +21,15 @@ interface Chat {
   unread?: number;
   online?: boolean;
   avatar: string;
+}
+
+interface Message {
+  id: number;
+  text?: string;
+  audioUrl?: string;
+  audioDuration?: number;
+  time: string;
+  isMine: boolean;
 }
 
 interface Story {
@@ -34,23 +46,51 @@ interface Track {
   duration: string;
 }
 
+interface Call {
+  id: number;
+  name: string;
+  avatar: string;
+  type: 'incoming' | 'outgoing' | 'missed';
+  isVideo: boolean;
+  time: string;
+}
+
 const Index = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showMusicSearch, setShowMusicSearch] = useState(false);
+  const [activeCall, setActiveCall] = useState<{ name: string; avatar: string; isVideo: boolean } | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [userName, setUserName] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [userBio, setUserBio] = useState('Доступен для общения');
   const [activeTab, setActiveTab] = useState<Tab>('chats');
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const [message, setMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
-  const chats: Chat[] = [
+  const [chats, setChats] = useState<Chat[]>([
     { id: 1, name: 'Анна Смирнова', lastMessage: 'Отлично, встретимся завтра!', time: '14:32', unread: 2, online: true, avatar: 'АС' },
     { id: 2, name: 'Группа проекта', lastMessage: 'Михаил: Добавил новые файлы', time: '13:15', unread: 5, avatar: 'ГП' },
     { id: 3, name: 'Дмитрий Волков', lastMessage: 'Спасибо за помощь 👍', time: '11:20', online: true, avatar: 'ДВ' },
     { id: 4, name: 'Мама', lastMessage: 'Не забудь позвонить бабушке', time: 'Вчера', avatar: 'М' },
     { id: 5, name: 'Екатерина', lastMessage: 'Фото: IMG_2847.jpg', time: 'Вчера', avatar: 'Е' },
-  ];
+  ]);
+
+  const [messages, setMessages] = useState<Record<number, Message[]>>({
+    1: [
+      { id: 1, text: 'Привет! Как дела?', time: '10:30', isMine: false },
+      { id: 2, text: 'Отлично! А у тебя?', time: '10:32', isMine: true },
+      { id: 3, text: 'Отлично, встретимся завтра!', time: '14:32', isMine: false },
+    ],
+  });
+
+  const [calls, setcalls] = useState<Call[]>([
+    { id: 1, name: 'Анна Смирнова', avatar: 'АС', type: 'incoming', isVideo: false, time: '14:30' },
+    { id: 2, name: 'Дмитрий Волков', avatar: 'ДВ', type: 'outgoing', isVideo: true, time: 'Вчера' },
+    { id: 3, name: 'Мама', avatar: 'М', type: 'missed', isVideo: false, time: '2 дня назад' },
+  ]);
 
   const stories: Story[] = [
     { id: 1, name: 'Ваша история', avatar: userName.charAt(0) || 'Я', viewed: false },
@@ -60,12 +100,12 @@ const Index = () => {
     { id: 5, name: 'Екатерина', avatar: 'Е', viewed: true },
   ];
 
-  const tracks: Track[] = [
+  const [tracks, setTracks] = useState<Track[]>([
     { id: 1, title: 'Midnight City', artist: 'M83', duration: '4:04' },
     { id: 2, title: 'Blinding Lights', artist: 'The Weeknd', duration: '3:22' },
     { id: 3, title: 'Levitating', artist: 'Dua Lipa', duration: '3:23' },
     { id: 4, title: 'Stay', artist: 'The Kid LAROI', duration: '2:21' },
-  ];
+  ]);
 
   const handleAuth = (phone: string, name: string) => {
     setUserPhone(phone);
@@ -79,10 +119,85 @@ const Index = () => {
   };
 
   const handleSendMessage = () => {
-    if (message.trim()) {
+    if (message.trim() && selectedChat) {
+      const newMessage: Message = {
+        id: Date.now(),
+        text: message,
+        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        isMine: true,
+      };
+      
+      setMessages(prev => ({
+        ...prev,
+        [selectedChat.id]: [...(prev[selectedChat.id] || []), newMessage],
+      }));
+
+      setChats(prev => prev.map(chat => 
+        chat.id === selectedChat.id 
+          ? { ...chat, lastMessage: message, time: newMessage.time }
+          : chat
+      ));
+
       setMessage('');
     }
   };
+
+  const handleSendVoice = (audioUrl: string, duration: number) => {
+    if (selectedChat) {
+      const newMessage: Message = {
+        id: Date.now(),
+        audioUrl,
+        audioDuration: duration,
+        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+        isMine: true,
+      };
+      
+      setMessages(prev => ({
+        ...prev,
+        [selectedChat.id]: [...(prev[selectedChat.id] || []), newMessage],
+      }));
+
+      setChats(prev => prev.map(chat => 
+        chat.id === selectedChat.id 
+          ? { ...chat, lastMessage: '🎤 Голосовое сообщение', time: newMessage.time }
+          : chat
+      ));
+
+      setIsRecordingVoice(false);
+    }
+  };
+
+  const handleStartCall = (isVideo: boolean) => {
+    if (selectedChat) {
+      setActiveCall({
+        name: selectedChat.name,
+        avatar: selectedChat.avatar,
+        isVideo,
+      });
+
+      const newCall: Call = {
+        id: Date.now(),
+        name: selectedChat.name,
+        avatar: selectedChat.avatar,
+        type: 'outgoing',
+        isVideo,
+        time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+      };
+      setcalls(prev => [newCall, ...prev]);
+    }
+  };
+
+  const handleEndCall = () => {
+    setActiveCall(null);
+  };
+
+  const handleAddTrack = (track: Track) => {
+    setTracks(prev => [...prev, track]);
+  };
+
+  const filteredChats = chats.filter(chat =>
+    chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (!isAuthenticated) {
     return <AuthScreen onAuth={handleAuth} />;
@@ -99,6 +214,26 @@ const Index = () => {
     );
   }
 
+  if (showMusicSearch) {
+    return (
+      <MusicSearch
+        onClose={() => setShowMusicSearch(false)}
+        onAddTrack={handleAddTrack}
+      />
+    );
+  }
+
+  if (activeCall) {
+    return (
+      <CallScreen
+        contactName={activeCall.name}
+        contactAvatar={activeCall.avatar}
+        isVideo={activeCall.isVideo}
+        onEnd={handleEndCall}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen bg-background overflow-hidden pb-16">
       {/* Main Content */}
@@ -108,7 +243,11 @@ const Index = () => {
             <div className="flex items-center justify-between mb-4">
               <h1 className="text-2xl font-bold">Чаты</h1>
               <div className="flex gap-2">
-                <Button size="icon" variant="ghost">
+                <Button 
+                  size="icon" 
+                  variant="ghost"
+                  onClick={() => setShowSearch(!showSearch)}
+                >
                   <Icon name="Search" size={20} />
                 </Button>
                 <Button size="icon" variant="ghost">
@@ -116,14 +255,27 @@ const Index = () => {
                 </Button>
               </div>
             </div>
+            {showSearch && (
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск чатов..."
+                className="mb-2"
+              />
+            )}
           </div>
 
           <ScrollArea className="flex-1">
             <div className="p-2">
-              {chats.map((chat) => (
+              {filteredChats.map((chat) => (
                 <button
                   key={chat.id}
-                  onClick={() => setSelectedChat(chat)}
+                  onClick={() => {
+                    setSelectedChat(chat);
+                    setChats(prev => prev.map(c => 
+                      c.id === chat.id ? { ...c, unread: 0 } : c
+                    ));
+                  }}
                   className="w-full p-4 rounded-xl hover:bg-card/50 transition-colors mb-2 text-left active:scale-98"
                 >
                   <div className="flex items-start gap-3">
@@ -144,7 +296,7 @@ const Index = () => {
                       </div>
                       <div className="flex items-center justify-between">
                         <p className="text-sm text-muted-foreground truncate">{chat.lastMessage}</p>
-                        {chat.unread && (
+                        {chat.unread && chat.unread > 0 && (
                           <Badge className="ml-2 h-6 min-w-[24px] bg-primary text-primary-foreground rounded-full">
                             {chat.unread}
                           </Badge>
@@ -182,59 +334,72 @@ const Index = () => {
                 <span>Шифрование</span>
               </div>
             </div>
-            <Button size="icon" variant="ghost">
+            <Button size="icon" variant="ghost" onClick={() => handleStartCall(false)}>
               <Icon name="Phone" size={20} />
             </Button>
-            <Button size="icon" variant="ghost">
+            <Button size="icon" variant="ghost" onClick={() => handleStartCall(true)}>
               <Icon name="Video" size={20} />
             </Button>
           </div>
 
           <ScrollArea className="flex-1 p-4 bg-background">
             <div className="space-y-3">
-              <div className="flex justify-start">
-                <div className="bg-card px-4 py-2.5 rounded-2xl rounded-tl-md max-w-[75%] animate-fade-in">
-                  <p className="text-sm">Привет! Как дела?</p>
-                  <span className="text-xs text-muted-foreground mt-1 inline-block">10:30</span>
+              {(messages[selectedChat.id] || []).map((msg) => (
+                <div key={msg.id} className={`flex ${msg.isMine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`px-4 py-2.5 rounded-2xl max-w-[75%] animate-fade-in ${
+                    msg.isMine 
+                      ? 'bg-primary text-primary-foreground rounded-tr-md' 
+                      : 'bg-card rounded-tl-md'
+                  }`}>
+                    {msg.text && <p className="text-sm">{msg.text}</p>}
+                    {msg.audioUrl && (
+                      <audio src={msg.audioUrl} controls className="max-w-full" />
+                    )}
+                    <span className={`text-xs mt-1 inline-block ${
+                      msg.isMine ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                    }`}>
+                      {msg.time}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-end">
-                <div className="bg-primary px-4 py-2.5 rounded-2xl rounded-tr-md max-w-[75%] animate-fade-in">
-                  <p className="text-sm text-primary-foreground">Отлично! А у тебя?</p>
-                  <span className="text-xs text-primary-foreground/70 mt-1 inline-block">10:32</span>
-                </div>
-              </div>
-              <div className="flex justify-start">
-                <div className="bg-card px-4 py-2.5 rounded-2xl rounded-tl-md max-w-[75%] animate-fade-in">
-                  <p className="text-sm">{selectedChat.lastMessage}</p>
-                  <span className="text-xs text-muted-foreground mt-1 inline-block">{selectedChat.time}</span>
-                </div>
-              </div>
+              ))}
             </div>
           </ScrollArea>
 
-          <div className="p-4 border-t border-border bg-card">
-            <div className="flex items-center gap-2">
-              <Button size="icon" variant="ghost" className="shrink-0">
-                <Icon name="Plus" size={22} />
-              </Button>
-              <Input
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Сообщение..."
-                className="flex-1 bg-muted border-0 h-11"
+          <div className="p-4 border-t border-border bg-card relative">
+            {isRecordingVoice ? (
+              <VoiceRecorder
+                onSend={handleSendVoice}
+                onCancel={() => setIsRecordingVoice(false)}
               />
-              {message.trim() ? (
-                <Button size="icon" onClick={handleSendMessage} className="shrink-0">
-                  <Icon name="Send" size={20} />
-                </Button>
-              ) : (
+            ) : (
+              <div className="flex items-center gap-2">
                 <Button size="icon" variant="ghost" className="shrink-0">
-                  <Icon name="Mic" size={22} />
+                  <Icon name="Plus" size={22} />
                 </Button>
-              )}
-            </div>
+                <Input
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder="Сообщение..."
+                  className="flex-1 bg-muted border-0 h-11"
+                />
+                {message.trim() ? (
+                  <Button size="icon" onClick={handleSendMessage} className="shrink-0">
+                    <Icon name="Send" size={20} />
+                  </Button>
+                ) : (
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="shrink-0"
+                    onClick={() => setIsRecordingVoice(true)}
+                  >
+                    <Icon name="Mic" size={22} />
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -245,14 +410,38 @@ const Index = () => {
           <div className="p-4 border-b border-border bg-card">
             <h1 className="text-2xl font-bold">Звонки</h1>
           </div>
-          <div className="flex-1 flex items-center justify-center p-4">
-            <div className="text-center animate-fade-in">
-              <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Icon name="Phone" size={40} className="text-primary" />
-              </div>
-              <p className="text-muted-foreground">История звонков пуста</p>
+          <ScrollArea className="flex-1">
+            <div className="p-2">
+              {calls.map((call) => (
+                <div
+                  key={call.id}
+                  className="flex items-center gap-3 p-4 rounded-xl hover:bg-card/50 transition-colors mb-2"
+                >
+                  <Avatar className="h-14 w-14">
+                    <AvatarFallback className="bg-primary/20 text-primary font-medium text-lg">
+                      {call.avatar}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1">
+                    <h3 className="font-semibold">{call.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Icon 
+                        name={call.type === 'incoming' ? 'PhoneIncoming' : call.type === 'outgoing' ? 'PhoneOutgoing' : 'PhoneMissed'} 
+                        size={14}
+                        className={call.type === 'missed' ? 'text-destructive' : ''}
+                      />
+                      <span>{call.isVideo ? 'Видео' : 'Голосовой'}</span>
+                      <span>•</span>
+                      <span>{call.time}</span>
+                    </div>
+                  </div>
+                  <Button size="icon" variant="ghost">
+                    <Icon name={call.isVideo ? 'Video' : 'Phone'} size={20} />
+                  </Button>
+                </div>
+              ))}
             </div>
-          </div>
+          </ScrollArea>
         </div>
       )}
 
@@ -291,7 +480,16 @@ const Index = () => {
       {activeTab === 'music' && (
         <div className="flex-1 flex flex-col">
           <div className="p-4 border-b border-border bg-card">
-            <h1 className="text-2xl font-bold">Музыка</h1>
+            <div className="flex items-center justify-between">
+              <h1 className="text-2xl font-bold">Музыка</h1>
+              <Button 
+                size="icon" 
+                variant="ghost"
+                onClick={() => setShowMusicSearch(true)}
+              >
+                <Icon name="Search" size={20} />
+              </Button>
+            </div>
           </div>
           <ScrollArea className="flex-1 p-2">
             {tracks.map((track) => (
